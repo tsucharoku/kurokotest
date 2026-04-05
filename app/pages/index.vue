@@ -184,8 +184,23 @@ function buildListUrl(page, filterParam) {
     return u.toString();
 }
 
+/**
+ * タイトル検索（q）ありのときだけサーバで取得しない。
+ * q なしのトップは SSG/SSR で一覧を HTML に載せられるようにする。
+ * クエリ違いのキャッシュ衝突は route.fullPath をキーに含めて避ける。
+ */
+function keywordQueryActive(query) {
+    const raw = query.q;
+    const s = Array.isArray(raw) ? raw[0] : raw;
+    return typeof s === 'string' && s.trim() !== '';
+}
+
+const fetchNewsListOnServer = !keywordQueryActive(useRoute().query);
+
+const newsListKey = computed(() => `news-list:${route.fullPath}`);
+
 const { data, pending, error } = await useAsyncData(
-    'news-list',
+    newsListKey,
     async () => {
         const page = currentPage.value;
         const filterParam = buildListFilterParam();
@@ -193,6 +208,7 @@ const { data, pending, error } = await useAsyncData(
     },
     {
         watch: [currentPage, searchRaw, categoryId],
+        server: fetchNewsListOnServer,
     }
 );
 

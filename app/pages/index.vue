@@ -4,6 +4,26 @@
             <h1 class="news-page__title">お知らせ</h1>
         </header>
 
+        <form class="news-search" @submit.prevent="submitSearch">
+            <label class="news-search__label" for="news-search-input">タイトルで検索</label>
+            <div class="news-search__row">
+                <input
+                    id="news-search-input"
+                    v-model="searchInput"
+                    class="news-search__input"
+                    type="search"
+                    name="q"
+                    placeholder="キーワードを入力"
+                    autocomplete="off"
+                />
+                <button type="submit" class="news-search__submit">検索</button>
+            </div>
+            <p v-if="searchRaw" class="news-search__hint">
+                「{{ searchRaw }}」で絞り込み
+                <NuxtLink :to="{ path: '/' }" class="news-search__clear">検索を解除</NuxtLink>
+            </p>
+        </form>
+
         <p v-if="pending" class="news-page__status">読み込み中…</p>
         <p v-else-if="error" class="news-page__status news-page__status--error">
             一覧を取得できませんでした。
@@ -52,6 +72,7 @@ const PER_PAGE = 10;
 
 const config = useRuntimeConfig();
 const route = useRoute();
+const router = useRouter();
 
 const currentPage = computed(() => {
     const raw = route.query.page;
@@ -60,28 +81,85 @@ const currentPage = computed(() => {
     return Number.isFinite(n) && n >= 1 ? n : 1;
 });
 
-const listUrl = computed(() => {
-    const u = new URL('rcms-api/2/news', config.public.apiBase);
-    u.searchParams.set('cnt', String(PER_PAGE));
-    if (currentPage.value > 1) {
-        u.searchParams.set('pageID', String(currentPage.value));
-    }
-    return u.toString();
+const searchRaw = computed(() => {
+    const raw = route.query.q;
+    const s = Array.isArray(raw) ? raw[0] : raw;
+    return typeof s === 'string' ? s.trim() : '';
 });
 
-const { data, pending, error } = await useFetch(listUrl, {
-    credentials: 'include',
-});
+const searchInput = ref(searchRaw.value);
+
+watch(
+    () => route.query.q,
+    (q) => {
+        const s = Array.isArray(q) ? q[0] : q;
+        searchInput.value = typeof s === 'string' ? s : '';
+    }
+);
+
+function submitSearch() {
+    const q = searchInput.value.trim();
+    const query = { ...route.query };
+    if (q) {
+        query.q = q;
+    } else {
+        delete query.q;
+    }
+    delete query.page;
+    router.push({ path: '/', query });
+}
+
+function escapeKurocoFilterString(value) {
+    return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+/** @see https://kuroco.app/ja/docs/reference/filter-query/ */
+function buildTitleFilterParam(query) {
+    const inner = escapeKurocoFilterString(query);
+    return `(subject icontains "${inner}")`;
+}
+
+function buildListUrl(page, filterParam) {
+    const u = new URL('rcms-api/2/news', config.public.apiBase);
+    u.searchParams.set('cnt', String(PER_PAGE));
+    if (page > 1) {
+        u.searchParams.set('pageID', String(page));
+    }
+    if (filterParam) {
+        u.searchParams.set('filter', filterParam);
+    }
+    return u.toString();
+}
+
+const { data, pending, error } = await useAsyncData(
+    'news-list',
+    async () => {
+        const page = currentPage.value;
+        const q = searchRaw.value;
+        const filterParam = q ? buildTitleFilterParam(q) : null;
+        return await $fetch(buildListUrl(page, filterParam), { credentials: 'include' });
+    },
+    {
+        watch: [currentPage, searchRaw],
+    }
+);
 
 const items = computed(() => data.value?.list ?? []);
 
 const totalPages = computed(() => data.value?.pageInfo?.totalPageCnt ?? 1);
 
 function pageTo(page) {
-    if (page <= 1) {
+    const query = {};
+    if (searchRaw.value) {
+        query.q = searchRaw.value;
+    }
+    if (page > 1) {
+        query.page = String(page);
+    }
+    if (Object.keys(query).length === 0) {
         return { path: '/' };
     }
-    return { path: '/', query: { page: String(page) } };
+    return { path: '/', query };
 }
 
 function formatDate(ymd) {
@@ -112,6 +190,74 @@ function formatDate(ymd) {
     font-size: 1.5rem;
     font-weight: 600;
     letter-spacing: 0.02em;
+}
+
+.news-search {
+    margin-bottom: 1.5rem;
+}
+
+.news-search__label {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #444;
+    margin-bottom: 0.35rem;
+}
+
+.news-search__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.news-search__input {
+    flex: 1 1 12rem;
+    min-width: 0;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.9375rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: inherit;
+}
+
+.news-search__input:focus {
+    outline: 2px solid #93c5fd;
+    outline-offset: 1px;
+    border-color: #2563eb;
+}
+
+.news-search__submit {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #fff;
+    background: #2563eb;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.news-search__submit:hover {
+    background: #1d4ed8;
+}
+
+.news-search__hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.8125rem;
+    color: #666;
+}
+
+.news-search__clear {
+    margin-left: 0.5rem;
+    font-size: 0.8125rem;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.news-search__clear:hover {
+    text-decoration: underline;
 }
 
 .news-page__status {

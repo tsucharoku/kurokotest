@@ -2,6 +2,7 @@
     <div class="news-page">
         <header class="news-page__header">
             <h1 class="news-page__title">お知らせ</h1>
+            <NuxtLink to="/news/categories" class="news-page__nav-link">カテゴリ一覧</NuxtLink>
         </header>
 
         <form class="news-search" @submit.prevent="submitSearch">
@@ -20,7 +21,11 @@
             </div>
             <p v-if="searchRaw" class="news-search__hint">
                 「{{ searchRaw }}」で絞り込み
-                <NuxtLink :to="{ path: '/' }" class="news-search__clear">検索を解除</NuxtLink>
+                <NuxtLink :to="listLinkWithoutSearch" class="news-search__clear">検索を解除</NuxtLink>
+            </p>
+            <p v-if="categoryId" class="news-search__hint">
+                カテゴリで絞り込み中（ID: {{ categoryId }}）
+                <NuxtLink :to="listLinkWithoutCategory" class="news-search__clear">カテゴリを解除</NuxtLink>
             </p>
         </form>
 
@@ -87,6 +92,35 @@ const searchRaw = computed(() => {
     return typeof s === 'string' ? s.trim() : '';
 });
 
+const categoryId = computed(() => {
+    const raw = route.query.category;
+    const s = Array.isArray(raw) ? raw[0] : raw;
+    if (typeof s !== 'string' || !/^\d+$/.test(s)) {
+        return null;
+    }
+    return s;
+});
+
+const listLinkWithoutCategory = computed(() => {
+    const query = { ...route.query };
+    delete query.category;
+    delete query.page;
+    if (Object.keys(query).length === 0) {
+        return { path: '/' };
+    }
+    return { path: '/', query };
+});
+
+const listLinkWithoutSearch = computed(() => {
+    const query = { ...route.query };
+    delete query.q;
+    delete query.page;
+    if (Object.keys(query).length === 0) {
+        return { path: '/' };
+    }
+    return { path: '/', query };
+});
+
 const searchInput = ref(searchRaw.value);
 
 watch(
@@ -119,6 +153,25 @@ function buildTitleFilterParam(query) {
     return `(subject icontains "${inner}")`;
 }
 
+function buildContentsTypeFilter(id) {
+    return `(contents_type = ${id})`;
+}
+
+function buildListFilterParam() {
+    const q = searchRaw.value;
+    const cat = categoryId.value;
+    if (q && cat) {
+        return `(${buildTitleFilterParam(q)} AND ${buildContentsTypeFilter(cat)})`;
+    }
+    if (q) {
+        return buildTitleFilterParam(q);
+    }
+    if (cat) {
+        return buildContentsTypeFilter(cat);
+    }
+    return null;
+}
+
 function buildListUrl(page, filterParam) {
     const u = new URL('rcms-api/2/news', config.public.apiBase);
     u.searchParams.set('cnt', String(PER_PAGE));
@@ -135,12 +188,11 @@ const { data, pending, error } = await useAsyncData(
     'news-list',
     async () => {
         const page = currentPage.value;
-        const q = searchRaw.value;
-        const filterParam = q ? buildTitleFilterParam(q) : null;
+        const filterParam = buildListFilterParam();
         return await $fetch(buildListUrl(page, filterParam), { credentials: 'include' });
     },
     {
-        watch: [currentPage, searchRaw],
+        watch: [currentPage, searchRaw, categoryId],
     }
 );
 
@@ -152,6 +204,9 @@ function pageTo(page) {
     const query = {};
     if (searchRaw.value) {
         query.q = searchRaw.value;
+    }
+    if (categoryId.value) {
+        query.category = categoryId.value;
     }
     if (page > 1) {
         query.page = String(page);
@@ -180,6 +235,11 @@ function formatDate(ymd) {
 }
 
 .news-page__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
     margin-bottom: 1.5rem;
     border-bottom: 1px solid #e5e5e5;
     padding-bottom: 0.75rem;
@@ -190,6 +250,17 @@ function formatDate(ymd) {
     font-size: 1.5rem;
     font-weight: 600;
     letter-spacing: 0.02em;
+}
+
+.news-page__nav-link {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.news-page__nav-link:hover {
+    text-decoration: underline;
 }
 
 .news-search {

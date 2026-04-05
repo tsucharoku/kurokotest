@@ -159,6 +159,7 @@ function submitSearch() {
     const query = { ...route.query };
     if (q) {
         query.q = q;
+        delete query.category;
     } else {
         delete query.q;
     }

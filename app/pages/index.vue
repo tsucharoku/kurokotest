@@ -24,7 +24,7 @@
                 <NuxtLink :to="listLinkWithoutSearch" class="news-search__clear">検索を解除</NuxtLink>
             </p>
             <p v-if="categoryId" class="news-search__hint">
-                カテゴリで絞り込み中（ID: {{ categoryId }}）
+                カテゴリで絞り込み中（{{ categoryFilterLabel }}）
                 <NuxtLink :to="listLinkWithoutCategory" class="news-search__clear">カテゴリを解除</NuxtLink>
             </p>
         </form>
@@ -37,7 +37,9 @@
             <li v-for="item in items" :key="item.topics_id" class="news-list__item">
                 <NuxtLink :to="`/news/${item.topics_id}`" class="news-list__link">
                     <time :datetime="item.ymd" class="news-list__date">{{ formatDate(item.ymd) }}</time>
-                    <span v-if="item.group_nm" class="news-list__category">{{ item.group_nm }}</span>
+                    <span v-if="newsCategoryLabel(item)" class="news-list__category">{{
+                        newsCategoryLabel(item)
+                    }}</span>
                     <span class="news-list__subject">{{ item.subject }}</span>
                 </NuxtLink>
             </li>
@@ -99,6 +101,27 @@ const categoryId = computed(() => {
         return null;
     }
     return s;
+});
+
+const { data: newsCategoriesData } = await useFetch(
+    `${config.public.apiBase}rcms-api/2/news/category`,
+    {
+        credentials: 'include',
+    }
+);
+
+const categoryFilterLabel = computed(() => {
+    const id = categoryId.value;
+    if (!id) {
+        return '';
+    }
+    const list = newsCategoriesData.value?.list ?? [];
+    const row = list.find((c) => String(c.topics_category_id) === id);
+    const nm = row?.category_nm;
+    if (typeof nm === 'string' && nm.trim() !== '') {
+        return nm.trim();
+    }
+    return `ID: ${id}`;
 });
 
 const listLinkWithoutCategory = computed(() => {
@@ -238,6 +261,19 @@ function formatDate(ymd) {
     const [y, m, d] = ymd.split('-');
     if (!y || !m || !d) return ymd;
     return `${y}.${m}.${d}`;
+}
+
+/** 一覧 JSON に `category` は無い。`contents_type_nm`（種別＝カテゴリ名）を優先し、無ければ `group_nm` */
+function newsCategoryLabel(item) {
+    const typeNm = item?.contents_type_nm;
+    if (typeof typeNm === 'string' && typeNm.trim() !== '') {
+        return typeNm.trim();
+    }
+    const groupNm = item?.group_nm;
+    if (typeof groupNm === 'string' && groupNm.trim() !== '') {
+        return groupNm.trim();
+    }
+    return '';
 }
 </script>
 
